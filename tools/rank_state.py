@@ -65,9 +65,14 @@ ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # names exactly these, so the spec and the tool cannot drift apart.
 AGENT_STATUSES = ("scored", "expired", "unreachable")
 
-# The values the two veto gates may take (rank.md Step 2). Step 5's veto is an
+# The values the veto gates may take (rank.md Step 2). Step 5's veto is an
 # exact match on "FAIL", so any other spelling would shortlist a deal-breaker.
 GATE_VERDICTS = ("PASS", "FAIL", "FLAG")
+GATES = {
+    "location_verdict": ("location_note", "Location decision unavailable; verify placement and remote eligibility."),
+    "language_gate": ("language_note", "Language decision unavailable; verify required languages against the profile."),
+    "eligibility_gate": ("eligibility_note", "Eligibility decision unavailable; verify confirmed must-haves against the posting."),
+}
 
 # A posting that could not be fetched is `unreachable`, not `expired`, and is
 # retried on later runs (#534). It gives up to `expired` only after this many
@@ -308,6 +313,25 @@ def band(score: int) -> str:
     return "Poor Fit"
 
 
+def gate_decision(result: dict, entry: dict, field: str) -> tuple[str, str | None]:
+    """Missing decisions must not manufacture eligibility or erase a veto."""
+    note_field, fallback = GATES[field]
+    verdict = result.get(field)
+    note = result.get(note_field)
+    if not verdict:
+        previous = entry_location_verdict(entry) if field == "location_verdict" else entry.get(field)
+        if previous in ("FAIL", "FLAG"):
+            verdict = previous
+            note = entry.get(note_field)
+        else:
+            verdict = "FLAG"
+    if verdict == "PASS":
+        return verdict, None
+    if isinstance(note, str) and note.strip():
+        return verdict, " ".join(note.split())[:200]
+    return verdict, fallback
+
+
 def cmd_apply(args) -> int:
     doc, seen = load_state(args.state)
     today = args.today
@@ -400,7 +424,7 @@ def cmd_apply(args) -> int:
             errors.append({"key": key, "error": str(exc)})
             continue
         bad_gate = next(
-            (f for f in ("location_verdict", "language_gate") if result.get(f) and result[f] not in GATE_VERDICTS),
+            (f for f in GATES if result.get(f) not in (None, "") and result[f] not in GATE_VERDICTS),
             None,
         )
         if bad_gate:
@@ -424,7 +448,7 @@ def cmd_apply(args) -> int:
             )
             continue
 
-        legacy = entry_location_verdict(entry)
+        decisions = {field: gate_decision(result, entry, field) for field in GATES}
         if entry.get("location") in ("PASS", "FAIL", "FLAG"):
             entry.pop("location", None)  # legacy verdict, never a place
         for field in (*RETRY_FIELDS, "expired_reason"):
@@ -433,12 +457,13 @@ def cmd_apply(args) -> int:
         entry["rank_score"] = score
         entry["rank_verdict"] = band(score)
         entry["rank_date"] = today.isoformat()
-        entry["location_verdict"] = result.get("location_verdict") or legacy or "PASS"
-        entry["language_gate"] = result.get("language_gate") or "PASS"
-        if entry["language_gate"] == "PASS":
-            entry.pop("language_note", None)
-        else:
-            entry["language_note"] = result.get("language_note")
+        for field, (verdict, note) in decisions.items():
+            entry[field] = verdict
+            note_field = GATES[field][0]
+            if note is None:
+                entry.pop(note_field, None)
+            else:
+                entry[note_field] = note
         # Absence is not a correction: a fetch that degraded to a listing page
         # returns no deadline, and blanking a stored one would erase a real
         # date and make the entry immortal to rule 6's sweep.
@@ -477,8 +502,11 @@ def cmd_apply(args) -> int:
                 "score": score,
                 "verdict": entry["rank_verdict"],
                 "location_verdict": entry["location_verdict"],
+                "location_note": entry.get("location_note"),
                 "language_gate": entry["language_gate"],
                 "language_note": entry.get("language_note"),
+                "eligibility_gate": entry["eligibility_gate"],
+                "eligibility_note": entry.get("eligibility_note"),
                 "deadline": entry.get("deadline"),
                 "posted_date": entry.get("posted_date"),
                 "urgent": bool(parsed and today <= parsed <= today + timedelta(days=URGENT_DAYS)),
@@ -492,7 +520,7 @@ def cmd_apply(args) -> int:
         save_state(args.state, doc)
 
     rows.sort(key=lambda r: (r["score"], r["urgent"]), reverse=True)
-    veto = lambda r: r["location_verdict"] == "FAIL" or r["language_gate"] == "FAIL"
+    veto = lambda r: any(r[field] == "FAIL" for field in GATES)
     vetoed = [r for r in rows if veto(r)]
     ranked = [r for r in rows if not veto(r)]
     print(

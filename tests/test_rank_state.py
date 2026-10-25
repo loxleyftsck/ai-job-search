@@ -294,6 +294,89 @@ class Apply(RankStateCase):
         base.update(extra)
         return base
 
+    def test_missing_gate_decisions_are_flagged_with_visible_reasons(self):
+        for value in ("absent", None, ""):
+            with self.subTest(value=value):
+                self.write_state({"a": entry(location="Jakarta", language_gate="PASS")})
+                result = self._scored()
+                for field in ("location_verdict", "language_gate"):
+                    if value == "absent":
+                        result.pop(field)
+                    else:
+                        result[field] = value
+                out = self.run_tool("apply", "--results", self.results([result]))
+                row = out["ranked"][0]
+                self.assertEqual(row["location_verdict"], "FLAG")
+                self.assertEqual(row["language_gate"], "FLAG")
+                self.assertTrue(row["location_note"])
+                self.assertTrue(row["language_note"])
+                stored = self.read_state()["a"]
+                self.assertEqual(stored["location_note"], row["location_note"])
+                self.assertEqual(stored["language_note"], row["language_note"])
+
+    def test_location_flag_reason_is_visible_then_cleared_by_explicit_pass(self):
+        self.write_state({"a": entry(location="Remote")})
+        note = "Remote eligibility for Indonesia is not stated."
+        out = self.run_tool("apply", "--results", self.results([
+            self._scored(location_verdict="FLAG", location_note=note)
+        ]))
+        self.assertEqual(out["ranked"][0]["location_note"], note)
+        self.assertEqual(self.read_state()["a"]["location_note"], note)
+        self.run_tool("apply", "--results", self.results([self._scored()]))
+        self.assertNotIn("location_note", self.read_state()["a"])
+
+    def test_missing_language_verdict_does_not_erase_a_stored_fail(self):
+        self.write_state({"a": entry(language_gate="FAIL", language_note="Requires Mandarin; not declared.")})
+        result = self._scored()
+        result.pop("language_gate")
+        out = self.run_tool("apply", "--results", self.results([result]))
+        self.assertEqual(out["ranked"], [])
+        self.assertEqual(out["vetoed"][0]["language_gate"], "FAIL")
+        self.assertEqual(out["vetoed"][0]["language_note"], "Requires Mandarin; not declared.")
+
+    def test_confirmed_salary_or_contract_must_have_failure_vetoes_high_scores(self):
+        self.write_state({"a": entry(), "b": entry()})
+        notes = {
+            "a": "Rp4-5 juta/month gross is below confirmed hard floor Rp7 juta/month gross.",
+            "b": "Contract role; candidate confirmed permanent-only as a must-have.",
+        }
+        out = self.run_tool("apply", "--results", self.results([
+            self._scored(key=key, eligibility_gate="FAIL", eligibility_note=note,
+                         scores={dim: 90 for dim in ("technical", "experience", "behavioral", "career")})
+            for key, note in notes.items()
+        ]))
+        self.assertEqual(out["ranked"], [])
+        self.assertEqual({row["key"] for row in out["vetoed"]}, {"a", "b"})
+        for row in out["vetoed"]:
+            self.assertEqual(row["eligibility_gate"], "FAIL")
+            self.assertEqual(row["eligibility_note"], notes[row["key"]])
+            self.assertEqual(row["location_verdict"], "PASS")
+            self.assertEqual(row["language_gate"], "PASS")
+            self.assertEqual(self.read_state()[row["key"]]["eligibility_note"], row["eligibility_note"])
+
+    def test_unknown_eligibility_stays_visible_and_explicit_pass_clears_it(self):
+        self.write_state({"a": entry()})
+        out = self.run_tool("apply", "--results", self.results([self._scored()]))
+        self.assertEqual(out["ranked"][0]["eligibility_gate"], "FLAG")
+        self.assertTrue(out["ranked"][0]["eligibility_note"])
+        out = self.run_tool("apply", "--results", self.results([
+            self._scored(eligibility_gate="PASS")
+        ]))
+        self.assertEqual(out["ranked"][0]["eligibility_gate"], "PASS")
+        self.assertNotIn("eligibility_note", self.read_state()["a"])
+
+    def test_eligibility_fail_survives_missing_decision_and_invalid_gate_is_error(self):
+        self.write_state({"a": entry(eligibility_gate="FAIL", eligibility_note="Confirmed salary floor conflict.")})
+        out = self.run_tool("apply", "--results", self.results([self._scored()]))
+        self.assertEqual(out["ranked"], [])
+        self.assertEqual(out["vetoed"][0]["eligibility_note"], "Confirmed salary floor conflict.")
+        before = self.read_state()
+        out = self.run_tool("apply", "--results", self.results([
+            self._scored(eligibility_gate="fail")
+        ]), expect=1)
+        self.assertTrue(out["errors"])
+        self.assertEqual(self.read_state(), before)
+
     def test_apply_persists_guard_verdict(self):
         # The scoring agent runs tools/posting_guard.py on each fetched body and
         # returns the verdict line as `guard`; it is stored additively and echoed

@@ -1,10 +1,12 @@
 ---
-framework_version: 1.2.7
+framework_version: 1.2.8
 ---
 
 # Job Evaluation Framework
 
 <!-- SETUP: Skill match areas and career goals are personalized by running /setup -->
+
+For the Indonesia market, load `10-indonesia-market.md` with this framework. Its source, placement/remote, entry-level, contract, compensation and uncertainty rules apply to both triage and full evaluation. Candidate must-haves come from the confirmed profile, never from the market preset. A required condition that conflicts with a confirmed must-have must be shown as a hard exclusion even if skill fit is high; missing information is FLAG, not a guessed pass.
 
 ## Eligibility Gate — run before scoring
 
@@ -91,10 +93,13 @@ Does the role and company culture match the behavioral profile?
 **Red flags to research:** Department disorganization, work dominated by maintenance over development, poor chemistry with leadership, culture mismatches. Check reviews, media coverage, LinkedIn connections, and network contacts for insider perspective.
 
 ### 4. Location & Logistics (Pass/Fail + Notes)
-- Within commute range: PASS
-- Remote with occasional office: PASS
-- Requires relocation: FAIL (deal-breaker)
-- Frequent international travel: FLAG (discuss with user)
+- Stated placement within the candidate's confirmed acceptable commute area: PASS.
+- Remote/hybrid with office attendance: PASS only when candidate eligibility, placement and mandatory attendance are compatible with the confirmed constraints. Remote alone does not prove worldwide eligibility.
+- Requires relocation: PASS when the candidate explicitly accepts that destination; FAIL only when it contradicts a confirmed must-have; FLAG if willingness or placement is unknown.
+- Travel or office attendance conflicting with a confirmed no-travel constraint: FAIL. Unspecified frequency or unclear country/remote eligibility: FLAG, with the missing information named.
+- Location constraints not yet supplied, or posting placement absent/ambiguous: FLAG and ask for clarification; never infer a commute time from a city/metro label.
+
+Every non-PASS decision carries `location_note` quoting the requirement or naming what needs confirmation. The user's actual location and preferences govern; a country's market preset is not a commute boundary.
 
 ### 5. Career Alignment & Motivation (0-100)
 Does this role advance career goals and contain tasks that energize?

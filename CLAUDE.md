@@ -13,6 +13,13 @@ This repo is a job application workspace. Claude acts as a career advisor and ap
 
 ## Candidate Profile
 
+### Market Configuration
+
+- **Search market:** Indonesia (a workspace preset, not a claim about the candidate's citizenship or home city).
+- **Conversation language:** Bahasa Indonesia unless the user requests another language.
+- Before setup, search, ranking, or application work for this market, read `.claude/skills/job-application-assistant/10-indonesia-market.md` alongside the canonical workflow.
+- Keep all candidate placeholders until the user supplies their facts. Never infer a city, target role, work rights, salary floor, or language proficiency from this market preset.
+
 <!-- This section is auto-populated by /setup. You can also fill it in manually. -->
 
 ### Identity

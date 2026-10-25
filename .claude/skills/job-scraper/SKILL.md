@@ -40,6 +40,14 @@ Optional arguments:
 
 Read `search-queries.md` (this directory) for the search strategy. `tools/scrape_state.py` reads `job_scraper/seen_jobs.json` and `job_search_tracker.csv` for deduplication; do not load either growing file into the conversation.
 
+For this checkout's Indonesia market, also read `../job-application-assistant/10-indonesia-market.md` and confirmed profile preferences. Ask for unresolved target function and location scope before personalized searching. Apply the guide's local-board WebSearch routes, appropriate title/level synonyms, remote eligibility and source-failure rules. Keep source provenance and show unknown information explicitly.
+
+**Prepare a bounded Indonesia plan.** Once the target roles and placement preferences are known, use `python tools/indonesia_search_plan.py --role "<confirmed title>" --location "<confirmed placement>" --max-searches 20` from the repo root (use `python3` off Windows as needed). Repeat `--role`/`--location` for confirmed variants. Add `--mode`, `--level` or `--tech` only when appropriate to the profile; `--mode remote` searches Indonesia-wide and does not require a home city. This helper needs only Python and produces a plan, not jobs. If unavailable in the runtime, the manual query templates remain the fallback; do not add broad permanent command permissions to make it run.
+
+Honor `enabled: false` before consuming any planner item, whether CLI or WebSearch; the helper omits disabled installed portals and reports them in `disabled_sources`. Recheck if portal settings changed after the plan was generated. Consume each selected item once: for `mechanism: cli`, run its `argv` as an argument array with its supplied `cwd` using the documented portal interface; **never join/eval it as a shell command**. For `mechanism: websearch`, pass `query` to WebSearch. If a CLI fails, use that item's query as fallback, not a second duplicate job source. `recency_days` is a discovery hint: use the search tool's supported recency option or inspect dates client-side. All existing integrity, fetch, expiry, deduplication and scoring rules still apply. Freehire's country-wide item retains `placement_scopes` for post-fetch checks and must not be repeated per city.
+
+Treat `total`, `selected`, `deferred` and `next_offset` as the search budget. Report how many queries remain; continue with the same inputs and returned `--offset` only when more discovery is needed. Do not immediately run every deferred query, then also run all portal queries again through Step 1b. The plan replaces the equivalent per-role/per-location discovery calls; keep company-careers searches and installed custom portals not covered by it. Level and granular placement filters not supported by a portal are post-fetch checks, never invented flags. Verify actual remote acceptance for Indonesia even when the search term is remote.
+
 > **Windows:** run these tools as `python`, not `python3`. A python.org install ships no `python3`, so that name reaches the Microsoft Store alias, which either exits 49 with no output (#669) or starts a separate Store Python without the packages `pip` installed (such as pypdf). `.claude/settings.json` allows both spellings.
 
 ### Step 1: Search
@@ -66,7 +74,7 @@ For each **enabled** portal skill:
 
 1. Read its `SKILL.md` to find the correct `bun run …` invocation and supported flags.
 2. Translate the query terms from `search-queries.md` into that portal's flag format (e.g. `--key`, `--search-string`, `--query`, filter codes — whatever the portal's SKILL.md specifies).
-3. Scope to the last 14 days using the portal's supported recency **filter** flag (`--jobage`, `--since <YYYY-MM-DD>`, etc. — as documented per portal). A portal with **no recency flag** (jobdanmark offers none) still gets scoped: every portal's search output carries a `date` field, so filter client-side — drop results whose `date` is older than 14 days after the call returns, and never invent a flag the portal's SKILL.md does not document (the CLIs reject unknown flags). `--order PublicationDate` is a sort, and a sort is not a filter — pairing it with a `--limit` is a defensible approximation on a portal that offers nothing better (jobnet), but apply the client-side date filter on top all the same.
+3. Use a 14-day discovery window with the portal's documented recency **filter** (`--jobage`, `--since <YYYY-MM-DD>`, etc.). This is a search budget, not proof older postings are closed: retain any older hit already known to have a future application deadline, and allow a separate targeted query without the age filter for a known live posting. For a portal with **no recency flag** (jobdanmark offers none), filter client-side with the same window using its `date`; keep unknown dates visibly unknown and preserve known future-deadline exceptions. Never invent unsupported flags (the CLIs reject them). `--order PublicationDate` changes order; a sort is not a filter. Pair it with a limit where appropriate and inspect dates client-side.
 4. Cap results to ~20 per call using the portal's limit flag.
 5. Use `--format json` for machine-readable output.
 
@@ -128,14 +136,18 @@ The `candidates` command applies these rules before a detail request:
 - Skip if the URL matches any existing `job_scraper/seen_jobs.json` entry, regardless of
   that entry's key. This preserves dedup continuity for postings stored under
   the pre-helper key rule while new entries use the canonical key from Step 4.
-- Otherwise, skip if the company+title combo already exists in `job_scraper/seen_jobs.json`
+- Otherwise, skip if the company+title combo already exists in `job_scraper/seen_jobs.json` at the same normalized location, or if either location is unknown. Retain different known locations with different URLs; do not lose a real vacancy in another city or branch.
 - Skip if the company+role already appears in `job_search_tracker.csv`
+
+The tracker exclusion remains conservative across locations because historical tracker rows have no structured location. Report its exclusion count and explain this limitation when relevant; do not alter an earlier application to retain a search hit.
 
 ### Step 2.5: Mass-Posting Detection (within this run)
 
 A distribution pattern worth flagging to the user as a caution signal, not as an accusation against the employer - it describes how a listing is being distributed, not a verdict on whether the company is legitimate. It alone proves nothing is wrong (companies do legitimately hire the same role across several cities); flag it so the user can factor it in when deciding whether to invest time, don't downgrade fit or silently exclude the result because of it.
 
 If two or more results in this run's pool (from the same company, or sharing the same req/job ID visible in the URL or title) have substantially the same description and differ only in city/location/title, don't present them as separate rows. Consolidate into a single row and note the spread, e.g. "posted identically across 6 cities (BR, MX, GT)".
+
+This is presentation grouping only: store every distinct retained location and URL, and expose all those URLs within the grouped row or its details. Do not merge different placement requirements or delete jobs from state just because descriptions match.
 
 ### Step 3: Quick Fit Assessment
 
@@ -185,11 +197,17 @@ python3 tools/scrape_state.py store --results "<temporary fetched jobs.json>"
 
 The tool rechecks deduplication against the current state and tracker, computes keys, and atomically adds only new entries to `job_scraper/seen_jobs.json`. Use its `added` keys to present only newly stored jobs. It leaves every older entry and its `/rank` fields untouched. Do not read or rewrite the full state file in the conversation.
 
+`make_key` supplies the base key. When another retained location has the same company/title base, `store` appends a stable URL-derived hash for the new entry. Use the actual `added` key, never recompute it later with `make_key` alone. Existing keys are never renamed. Location comparison normalizes case/separators, not geographic aliases; missing locations stay conservative.
+
 The `portal` field records which CLI skill produced the job (results are already tagged per portal in Step 1b - persist that tag here). Entries written before this field existed lack it; the health check (Step 4.75) attributes those by matching the URL's domain against each portal's base URL, so do not backfill.
 
 The `source` field records which mechanism produced the entry: `cli` for Step 1b portal-CLI output, `websearch` for the Step 1c fallback. This is what keeps a ghost-job report diagnosable after the run's summary is gone: a stored entry whose URL later resolves to nothing (or to a different job) reads very differently depending on whether it came from live CLI output or from a search index that can be weeks stale - and a presented job with no entry here at all points at fabrication, which Rule 1 forbids. Entries written before this field existed lack it; never backfill it - the mechanism was not recorded.
 
 `/rank` extends this schema additively: ranked entries also carry `rank_score` (0–100 overall score), `rank_verdict` (fit band, e.g. "strong fit"), `rank_date` (ISO date of ranking), the veto fields `location_verdict` and `language_gate` (both PASS/FAIL/FLAG) with `language_note` (the quoted requirement explaining a non-PASS), and `strengths`/`gaps` (1-3 verbatim bullets each, copied from the scoring agent's findings). The `status` field is set to `"ranked"`. Do not drop any of these fields when re-writing entries. Entries ranked before `strengths`/`gaps` existed simply lack them; readers tolerate their absence and never backfill by guessing. Entries ranked before the verdict rename may carry a legacy PASS/FAIL/FLAG string in `location` - read that as the verdict when `location_verdict` is absent; in fresh entries `location` is always a place, never a verdict.
+
+Ranked entries may also carry `location_note`, with the placement/remote evidence or missing information explaining a non-PASS. Missing gate decisions are FLAG with reasons, not implicit PASS; see `/rank`'s incomplete-gate rule. Old entries lacking notes remain readable; never fabricate past assessments.
+
+`eligibility_gate` (PASS/FAIL/FLAG) and `eligibility_note` are additive `/rank` fields for other confirmed must-haves such as contract, required qualifications or a comparable hard salary floor. A FAIL excludes the job independently of skill score; unknown evidence is FLAG. Preserve these fields like the location/language decisions; old entries remain readable without fabricating an assessment.
 
 `deadline` is a base field rather than a `/rank` extension: Step 2's detail fetch already extracts the application deadline, so it is written when the job is first seen and refreshed by `/rank` Step 4 when a scoring agent returns a different value. `null` means the posting states no deadline; a missing key means the entry predates this field - **never infer a deadline** from either, and never backfill by guessing.
 

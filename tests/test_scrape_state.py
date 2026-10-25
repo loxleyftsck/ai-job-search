@@ -95,6 +95,46 @@ class ScrapeStateTests(unittest.TestCase):
             self.assertEqual(scrape_state.run(args), 0)
         self.assertEqual(json.loads(output.getvalue()), {"portal": "example-search", "prior_entries": 2})
 
+    def test_different_known_locations_are_not_duplicates(self):
+        jobs = [
+            {"title": "Admin", "company": "PT Contoh", "location": "Bandung", "url": "https://jobs.test/1"},
+            {"title": "Admin", "company": "PT Contoh", "location": "Surabaya", "url": "https://jobs.test/2"},
+        ]
+        out = self.run_tool("candidates", jobs)
+        self.assertEqual(out["selected"], jobs)
+        self.assertEqual(out["repeated_in_batch"], 0)
+
+    def test_store_preserves_history_and_retains_new_location_without_key_collision(self):
+        old = {"title": "Admin", "company": "PT Contoh", "location": "Bandung",
+               "url": "https://jobs.test/1", "status": "ranked", "rank_score": 91}
+        self.state.parent.mkdir()
+        self.state.write_text(json.dumps({"seen": {"pt-contoh_admin": old}}), encoding="utf-8")
+        fresh = {**old, "location": "Surabaya", "url": "https://jobs.test/2", "status": "new",
+                 "first_seen": "2026-10-24", "posted_date": None, "deadline": None,
+                 "fit": "high", "portal": "example-search", "source": "cli"}
+        fresh.pop("rank_score")
+        out = self.run_tool("store", [fresh])
+        self.assertEqual(len(out["added"]), 1)
+        new_key = out["added"][0]
+        self.assertNotEqual(new_key, "pt-contoh_admin")
+        stored = json.loads(self.state.read_text(encoding="utf-8"))["seen"]
+        self.assertEqual(stored["pt-contoh_admin"], old)
+        self.assertEqual(stored[new_key], fresh)
+        self.assertEqual(self.run_tool("store", [fresh])["added"], [])
+        self.assertEqual(self.run_tool("candidates", [fresh])["selected"], [])
+
+    def test_same_url_is_duplicate_even_when_location_changes(self):
+        first = {"title": "Admin", "company": "PT Contoh", "location": "Bandung", "url": "https://jobs.test/1"}
+        out = self.run_tool("candidates", [first, {**first, "location": "Surabaya"}])
+        self.assertEqual(out["selected"], [first])
+
+    def test_unknown_or_equivalent_location_stays_conservative(self):
+        first = {"title": "Admin", "company": "PT Contoh", "location": "Bandung", "url": "https://jobs.test/1"}
+        for location in (None, "", "  ", "BANDUNG", "Bandung ", "unknown", "N/A", "belum diketahui"):
+            with self.subTest(location=location):
+                out = self.run_tool("candidates", [first, {**first, "location": location, "url": "https://jobs.test/2"}])
+                self.assertEqual(out["selected"], [first])
+
 
 if __name__ == "__main__":
     unittest.main()

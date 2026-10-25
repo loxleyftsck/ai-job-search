@@ -59,6 +59,23 @@ files ready    with fit ratings     (LaTeX, tailored)
 
 The framework encodes career guidance best practices, including structured evaluation criteria, forward-looking cover letter framing, and optional salary benchmarking.
 
+## Pemakaian untuk Indonesia
+
+Checkout ini memiliki [panduan pasar Indonesia](.claude/skills/job-application-assistant/10-indonesia-market.md) yang terhubung ke setup, pencarian, ranking, dan pembuatan lamaran. Isi profil melalui `/setup`: fungsi/jabatan, kota dan batas perjalanan, relokasi, remote/hybrid/on-site, jenjang pengalaman/pendidikan, jenis kontrak, bahasa, serta preferensi gaji Rupiah dan periode gross/net bila diketahui. Data yang belum diberikan tetap kosong; Jakarta atau pekerjaan teknologi bukan asumsi bawaan kandidat.
+
+Pencarian lokal mencakup [JobStreet](https://id.jobstreet.com/jobs), [Glints](https://glints.com/id), [Dealls](https://dealls.com/loker), dan [Kalibrr Indonesia](https://www.kalibrr.id/home) melalui pencarian web dan verifikasi halaman lowongan. Ini **jalur fallback, bukan scraper/API lokal baru**. LinkedIn memakai CLI yang sudah ada bila bisa diakses; Freehire hanya untuk pencarian teknologi yang relevan. Bila sumber diblokir atau data tidak lengkap, alur menampilkan batasannya dan dapat memakai teks lowongan yang ditempel pengguna.
+
+Perbaikan logika mempertahankan lowongan perusahaan/jabatan sama di lokasi berbeda yang diketahui, tanpa mengganti kunci riwayat lama. Keputusan lokasi/bahasa yang belum tersedia ditandai `FLAG` dengan alasan. Gaji tersembunyi tidak otomatis menggagalkan lowongan, dan remote tidak otomatis berarti menerima pelamar dari Indonesia. Aturan lengkap serta batas deduplikasi tracker ada di panduan pasar.
+
+Untuk menyiapkan pencarian yang konsisten, tersedia generator rencana tanpa dependensi tambahan. Contoh berikut hanya contoh jabatan/kota; ganti dengan preferensimu:
+
+```text
+python tools/indonesia_search_plan.py --role "Admin" --location "Bandung" --level fresh-graduate --web-only --format text
+python tools/indonesia_search_plan.py --role "Data Analyst" --mode remote --tech --max-searches 10
+```
+
+Generator menghasilkan query portal dan, bila Bun tersedia, argumen CLI yang didukung. Generator **belum menjalankan pencarian**. Jumlah query dibatasi per putaran dan sisanya dapat dilanjutkan dengan `--offset`. Profil yang masih berupa placeholder ditolak; kelayakan remote, level, kontrak, gaji dan status lowongan tetap diperiksa setelah hasil ditemukan. `/scrape` memakai rencana ini untuk sumber Indonesia yang dicakupnya tanpa menggandakan pencarian yang sama.
+
 ## Prerequisites
 
 - [Claude Code](https://claude.com/claude-code) (CLI). Claude Code has no free tier: you need a Claude Pro/Max/Team subscription or Anthropic API credits (pay-per-token, usually cheaper for occasional use). Using a different agent tool (Codex, Antigravity, Gemini CLI)? Start at [`AGENTS.md`](AGENTS.md) - the portal search skills work there out of the box, and [community forks](https://github.com/MadsLorentzen/ai-job-search/discussions/78) adapt the full workflow.

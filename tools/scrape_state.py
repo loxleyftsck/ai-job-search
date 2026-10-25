@@ -7,6 +7,7 @@ current history and tracker; `store` writes the history atomically.
 """
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -39,18 +40,32 @@ def identity(job: dict) -> tuple[str, tuple[str, str]]:
     return url.rstrip("/"), (norm(job["company"]), norm(job["title"]))
 
 
+def location_identity(job: dict) -> str:
+    """Unknown and legacy verdicts cannot prove two postings are different."""
+    location = job.get("location")
+    if not isinstance(location, str) or location in ("PASS", "FAIL", "FLAG"):
+        return ""
+    place = norm(location)
+    return "" if place in ("unknown", "na", "notspecified", "belumdiketahui", "tidakdiketahui") else place
+
+
+def matches_location(locations: set[str], location: str) -> bool:
+    return bool(locations) and (not location or "" in locations or location in locations)
+
+
 def select(jobs: list, seen: dict, tracker: set, *, strict: bool = False) -> tuple[list[dict], dict]:
-    urls, pairs = set(), set()
+    urls, pairs = set(), {}
     for entry in seen.values():
         if not isinstance(entry, dict):
             raise ValueError("job_scraper/seen_jobs.json contains a non-object entry")
         if isinstance(entry.get("url"), str):
             urls.add(entry["url"].rstrip("/"))
-        pairs.add((norm(entry.get("company")), norm(entry.get("title"))))
+        pair = (norm(entry.get("company")), norm(entry.get("title")))
+        pairs.setdefault(pair, set()).add(location_identity(entry))
 
     selected = []
     counts = {"already_seen": 0, "already_applied": 0, "repeated_in_batch": 0, "invalid": []}
-    batch_urls, batch_pairs = set(), set()
+    batch_urls, batch_pairs = set(), {}
     for index, job in enumerate(jobs):
         try:
             if not isinstance(job, dict):
@@ -61,16 +76,17 @@ def select(jobs: list, seen: dict, tracker: set, *, strict: bool = False) -> tup
                 raise ValueError(f"job {index + 1}: {exc}") from exc
             counts["invalid"].append({"index": index, "error": str(exc)})
             continue
-        if url in urls or pair in pairs:
+        location = location_identity(job)
+        if url in urls or matches_location(pairs.get(pair, set()), location):
             counts["already_seen"] += 1
         elif pair in tracker:
             counts["already_applied"] += 1
-        elif url in batch_urls or pair in batch_pairs:
+        elif url in batch_urls or matches_location(batch_pairs.get(pair, set()), location):
             counts["repeated_in_batch"] += 1
         else:
             selected.append(job)
             batch_urls.add(url)
-            batch_pairs.add(pair)
+            batch_pairs.setdefault(pair, set()).add(location)
     return selected, counts
 
 
@@ -107,6 +123,7 @@ def run(args) -> int:
         print(json.dumps({"selected": selected, **counts}, ensure_ascii=False))
         return 0
 
+    added = []
     for job in selected:
         for field in ("first_seen", "posted_date", "deadline", "fit", "status", "portal", "source"):
             if field not in job:
@@ -117,12 +134,19 @@ def run(args) -> int:
             raise ValueError("job has an invalid portal or source")
         key = make_key(job["company"], job["title"], job["url"])
         if key in seen:
-            raise ValueError(f"canonical key already exists for another posting: {key}")
+            # Keep historical keys intact. A second known location needs its
+            # own handle, and the URL makes that suffix repeatable across runs.
+            url = job["url"].strip().rstrip("/")
+            digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+            key = f"{key}-{digest}"
+            if key in seen:
+                raise ValueError(f"posting key collision: {key}")
         seen[key] = job
+        added.append(key)
     if selected:
         args.state.parent.mkdir(parents=True, exist_ok=True)
         save_state(args.state, doc)
-    print(json.dumps({"added": [make_key(j["company"], j["title"], j["url"]) for j in selected], **counts}, ensure_ascii=False))
+    print(json.dumps({"added": added, **counts}, ensure_ascii=False))
     return 0
 
 

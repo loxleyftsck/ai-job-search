@@ -4,6 +4,8 @@ You are running the onboarding setup for the AI Job Search framework. Your goal 
 
 There are three paths into setup. Step 0 picks the right one; all three converge on Step 3 (file generation) and Step 4 (confirmation).
 
+**Indonesia market preset:** this checkout targets Indonesia. Read `.claude/skills/job-application-assistant/10-indonesia-market.md` before collecting preferences. Its onboarding checklist applies to all three paths (Path A's gap questions, Path B's follow-ups, and Path C Sections 1/2/7/9). Ask only for information not already supplied; a market preset is not personal data. Preserve this market configuration when populating `CLAUDE.md`.
+
 ---
 
 ## Step 0: Welcome & Choose Path
@@ -325,6 +327,8 @@ If not, ask behavioral questions:
 - What environments to avoid
 - Commute/location constraints
 
+For Indonesia, capture the market guide's placement, work-mode, relocation, shift, contract, and salary-period/basis preferences here. Store the confirmed constraints in `CLAUDE.md`'s Deal-breakers/preferences and the search location tiers; label undecided preferences as unknown. Do not set every preference as a hard rejection: distinguish must-haves from negotiable preferences.
+
 ### Section 8: References (optional)
 For each reference:
 - Name, title, company, email, phone
@@ -340,6 +344,8 @@ Ask about:
 - **Geographic scope:** "Which cities or regions should I search in? How far are you willing to commute?" Use this to define the location filter tiers (ideal, acceptable, borderline, too far).
 - **Job portals:** "The framework ships country-agnostic search CLIs (`linkedin-search`, `freehire-search`, enabled by default) plus Danish portal demos (Jobindex, Jobbank, Jobdanmark, Jobnet) that ship **disabled**. `/scrape` auto-discovers whatever portal skills are installed under `.agents/skills/` and skips any with `enabled: false`. Which portals fit your market?" **Then act on the answer:** if the user's market is Denmark (or they ask for the Danish boards), edit each of the four Danish `SKILL.md` files and set `enabled: true` in the frontmatter; otherwise leave them disabled and say so - they cost nothing while disabled and can be enabled later by flipping the flag. If the user needs a local board that is not shipped, guide them to `/add-portal` (market-specific skills live in their fork). WebSearch/`site:` queries remain the fallback for portals without a CLI skill.
 - **CV language:** "Should your CVs be written in English (the default, accepted in most markets), or in your market's language?" Record the answer as a `CV language: <language>` line in CLAUDE.md's Identity section. Cover letters always match each posting's language automatically; this setting governs the CV only. If the user is unsure, keep English and note they can re-run `/setup --section search` to change it.
+
+For Indonesia, use the source routes and bilingual query examples in `10-indonesia-market.md` and `search-queries.md`. Local portals without a CLI use WebSearch; do not invent an API or claim they were scraped. Limit Freehire to relevant tech searches. Confirm the actual role/function, location scope, and working languages before making personalized searches; do not replace missing answers with Jakarta, software engineering, or fluent English.
 
 **Important:** Also suggest role types the user may not have considered, based on their skill profile. For example:
 - If they have strong Python + domain expertise: "Have you considered roles like 'Technical Consultant' or 'Solutions Engineer' in your domain?"
